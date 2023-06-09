@@ -14,7 +14,7 @@ SoftwareSerial Serial1(4, 3); // TX, RX
 #define ESP_BAUDRATE  19200
 #else
 #define ESP_BAUDRATE  115200
-#endif ff aas
+#endif 
 
 unsigned long myChannelNumber = SECRET_CH_ID;
 const char * myWriteAPIKey = SECRET_WRITE_APIKEY;
