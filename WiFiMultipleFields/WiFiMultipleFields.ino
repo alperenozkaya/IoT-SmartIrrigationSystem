@@ -1,91 +1,127 @@
 #include "WiFiEsp.h"
 #include "secrets.h"
-#include "ThingSpeak.h" // always include thingspeak header file after other header files and custom macros
+#include "ThingSpeak.h" 
 
-char ssid[] = SECRET_SSID;   // your network SSID (name) 
-char pass[] = SECRET_PASS;   // your network password
-int keyIndex = 0;            // your network key Index number (needed only for WEP)
+char ssid[] = SECRET_SSID; 
+char pass[] = SECRET_PASS;
+int keyIndex = 0;            
 WiFiEspClient  client;
 
-// Emulate Serial1 on pins 3/4 if not present
 #ifndef HAVE_HWSERIAL1
 #include "SoftwareSerial.h"
-SoftwareSerial Serial1(4, 3); // TX, RX
+SoftwareSerial Serial1(4, 3); 
 #define ESP_BAUDRATE  19200
 #else
 #define ESP_BAUDRATE  115200
 #endif 
 
+#define moisture A0
+#define lux A1
+#define direct_1 7
+#define direct_2 6
+#define echo_pin 10
+#define trick_pin 11
+
+
 unsigned long myChannelNumber = SECRET_CH_ID;
 const char * myWriteAPIKey = SECRET_WRITE_APIKEY;
 
-// Initialize our values
-int number1 = 0;
-int number2 = random(0,100);
-int number3 = random(0,100);
-int number4 = random(0,100);
+// Initialize values
+int soilMoisture = 0;
+int lightLevel = 0;
+int waterLevel = 0;
+int wateringInterval = 0; // 1 for watering, 0 for not watering
+
+int soilMoistureLowerLimit = 20; // lower limit for soil moisture to start watering
+int waterLevelLowerLimit = 2; // lower limit for water level to stop watering
 String myStatus = "";
 
 void setup() {
-  //Initialize serial and wait for port to open
-  Serial.begin(115200);  // Initialize serial
-  while(!Serial){
-    ; // wait for serial port to connect. Needed for Leonardo native USB port only
-  }
-  
-  // initialize serial for ESP module  
+  Serial.begin(115200); 
+  while(!Serial);
+
+  // moisture and light input pins
+  pinMode(moisture, INPUT);
+  pinMode(lux, INPUT);
+  // motor direction pins
+  pinMode(direct_1,OUTPUT);
+  pinMode(direct_2,OUTPUT);
+  // pins for ultrasonic sound sensor
+  pinMode(trick_pin, OUTPUT);
+  pinMode(echo_pin, INPUT); 
+
+
   setEspBaudRate(ESP_BAUDRATE);
   
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for Leonardo native USB port only
-  }
+  while (!Serial);
 
   Serial.print("Searching for ESP8266..."); 
-  // initialize ESP module
   WiFi.init(&Serial1);
 
-  // check for the presence of the shield
   if (WiFi.status() == WL_NO_SHIELD) {
     Serial.println("WiFi shield not present");
-    // don't continue
     while (true);
   }
   Serial.println("found it!");
    
-  ThingSpeak.begin(client);  // Initialize ThingSpeak
+  ThingSpeak.begin(client);
 }
 
 void loop() {
-
-  // Connect or reconnect to WiFi
   if(WiFi.status() != WL_CONNECTED){
     Serial.print("Attempting to connect to SSID: ");
     Serial.println(SECRET_SSID);
     while(WiFi.status() != WL_CONNECTED){
-      WiFi.begin(ssid, pass);  // Connect to WPA/WPA2 network. Change this line if using open or WEP network
+      WiFi.begin(ssid, pass);
       Serial.print(".");
       delay(5000);     
     } 
     Serial.println("\nConnected.");
   }
 
-  // set the fields with the values
-  ThingSpeak.setField(1, number1);
-  ThingSpeak.setField(2, number2);
-  ThingSpeak.setField(3, number3);
-  ThingSpeak.setField(4, number4);
-
-  // figure out the status message
-  if(number1 > number2){
-    myStatus = String("field1 is greater than field2"); 
-  }
-  else if(number1 < number2){
-    myStatus = String("field1 is less than field2");
-  }
-  else{
-    myStatus = String("field1 equals field2");
-  }
+  // get moisture and light values from sensors
+  soilMoisture = map(analogRead(moisture),0,1023,100,0);
+  lightLevel = map(analogRead(lux),0,1023,100,0);
   
+  // get water level
+  digitalWrite(trick_pin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trick_pin, LOW);
+
+  long duration = pulseIn(echo_pin, HIGH);
+  waterLevel = 12 - duration * 0.017;
+
+
+  // check soil moisture and water level to start watering or not
+  if (soilMoisture < soilMoistureLowerLimit && waterLevel >= waterLevelLowerLimit) {
+    wateringInterval = 1; // start watering
+    myStatus = "Watering started";
+    // code to start watering
+    digitalWrite(direct_1,HIGH);
+    digitalWrite(direct_2,LOW);
+    
+    delay(15000); // watering time
+    myStatus = "Watering completed";
+    // code to stop watering
+    digitalWrite(direct_1,LOW);
+    
+  }
+  // print statements to see the current values on serial monitor
+  Serial.print("Soil moisture level is ");
+  Serial.println(soilMoisture);
+  Serial.print("Light level is ");
+  Serial.println(lightLevel);
+  Serial.print("Water level is ");
+  Serial.println(waterLevel);
+  Serial.print("Water interval is ");
+  Serial.println(wateringInterval);
+
+  // set the fields with the values
+  ThingSpeak.setField(1, soilMoisture);
+  ThingSpeak.setField(2, lightLevel);
+  ThingSpeak.setField(3, waterLevel);
+  ThingSpeak.setField(4, wateringInterval);
+  wateringInterval = 0;
   // set the status
   ThingSpeak.setStatus(myStatus);
   
@@ -98,20 +134,9 @@ void loop() {
     Serial.println("Problem updating channel. HTTP error code " + String(x));
   }
   
-  // change the values
-  number1++;
-  if(number1 > 99){
-    number1 = 0;
-  }
-  number2 = random(0,100);
-  number3 = random(0,100);
-  number4 = random(0,100);
-  
-  delay(20000); // Wait 20 seconds to update the channel again
+  delay(15000); // Wait  seconds to update the channel again
 }
 
-// This function attempts to set the ESP8266 baudrate. Boards with additional hardware serial ports
-// can use 115200, otherwise software serial is limited to 19200.
 void setEspBaudRate(unsigned long baudrate){
   long rates[6] = {115200,74880,57600,38400,19200,9600};
 
