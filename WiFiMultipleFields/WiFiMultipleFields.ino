@@ -15,10 +15,12 @@ SoftwareSerial Serial1(4, 3);
 #define ESP_BAUDRATE  115200
 #endif 
 
-#define moisture A0
-#define lux A1
+#define moisture A0 // moisture sensor input pin
+#define lux A1 // light sensor input pin
+// water pump direction pins
 #define direct_1 7
 #define direct_2 6
+// ultrasonic sound sensor output and input pin
 #define echo_pin 10
 #define trick_pin 11
 
@@ -43,7 +45,7 @@ void setup() {
   // moisture and light input pins
   pinMode(moisture, INPUT);
   pinMode(lux, INPUT);
-  // motor direction pins
+  // water pump direction pins
   pinMode(direct_1,OUTPUT);
   pinMode(direct_2,OUTPUT);
   // pins for ultrasonic sound sensor
@@ -79,7 +81,7 @@ void loop() {
     Serial.println("\nConnected.");
   }
 
-  // get moisture and light values from sensors
+  // get soil moisture and light level values from sensors
   soilMoisture = map(analogRead(moisture),0,1023,100,0);
   lightLevel = map(analogRead(lux),0,1023,100,0);
   
